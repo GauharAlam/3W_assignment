@@ -1,22 +1,37 @@
 import { useRef, useState } from 'react';
-import { Card, CardContent, TextField, Button, Box, Typography, Avatar } from '@mui/material';
+import {
+  Card,
+  CardContent,
+  Button,
+  Box,
+  Typography,
+  Alert,
+  LinearProgress,
+  IconButton,
+  Tooltip,
+} from '@mui/material';
 import ImageIcon from '@mui/icons-material/Image';
 import CloseIcon from '@mui/icons-material/Close';
-import { IconButton } from '@mui/material';
+import SendIcon from '@mui/icons-material/Send';
 import { useAuth } from '../context/AuthContext';
+import UserAvatar from './UserAvatar';
+
+const MAX_LEN = 2000;
 
 /**
- * Composer for a new post — text and/or image (either one is enough).
- * Images are previewed locally and sent as base64 data-URLs (max ~5MB).
+ * Post composer — guests see nothing, members get an avatar-led editor
+ * with photo attachment, live character count and inline validation.
  */
 export default function CreatePost({ onCreate, creating }) {
   const { user } = useAuth();
   const [text, setText] = useState('');
   const [imageDataUrl, setImageDataUrl] = useState('');
   const [error, setError] = useState('');
+  const [focused, setFocused] = useState(false);
   const fileRef = useRef(null);
 
   if (!user) return null;
+  const expanded = focused || text.length > 0 || imageDataUrl;
 
   const handleFile = (file) => {
     setError('');
@@ -39,63 +54,100 @@ export default function CreatePost({ onCreate, creating }) {
     e.preventDefault();
     setError('');
     if (!text.trim() && !imageDataUrl) {
-      setError('Write something or add an image — either one is enough.');
+      setError('Write something or add a photo — either one is enough.');
       return;
     }
     try {
       await onCreate({ text: text.trim(), imageUrl: imageDataUrl });
       setText('');
       setImageDataUrl('');
+      setFocused(false);
       if (fileRef.current) fileRef.current.value = '';
     } catch (err) {
-      setError(err?.response?.data?.message || 'Could not create post.');
+      setError(err?.response?.data?.message || 'Could not publish your post.');
     }
   };
 
   return (
-    <Card sx={{ mb: 2, borderRadius: 3 }}>
-      <CardContent>
+    <Card id="composer" className="animate-fade-up" sx={{ mb: 2.5, scrollMarginTop: 90 }}>
+      {creating && <LinearProgress />}
+      <CardContent sx={{ pb: '16px !important' }}>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
-          <Avatar sx={{ bgcolor: 'primary.main' }}>{user.username?.[0]?.toUpperCase()}</Avatar>
-          <Box component="form" onSubmit={handleSubmit} sx={{ flexGrow: 1 }}>
-            <TextField
-              fullWidth
-              multiline
-              minRows={2}
-              placeholder={`What's on your mind, ${user.username}?`}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              inputProps={{ maxLength: 2000 }}
-            />
+          <UserAvatar username={user.username} size={44} />
+          <Box component="form" onSubmit={handleSubmit} sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Box
+              onClick={() => setFocused(true)}
+              sx={{
+                borderRadius: 4,
+                backgroundColor: expanded ? '#fff' : '#f4f2fb',
+                border: expanded ? '1.5px solid #6a3df4' : '1.5px solid transparent',
+                transition: 'all .2s ease',
+                px: 2,
+                py: 1.2,
+                cursor: expanded ? 'text' : 'pointer',
+                '&:hover': { backgroundColor: expanded ? '#fff' : '#ede9fa' },
+              }}
+            >
+              <textarea
+                rows={expanded ? 3 : 1}
+                placeholder={`Share something, ${user.username}…`}
+                value={text}
+                onChange={(e) => setText(e.target.value.slice(0, MAX_LEN))}
+                onFocus={() => setFocused(true)}
+                style={{
+                  width: '100%',
+                  border: 'none',
+                  outline: 'none',
+                  resize: 'none',
+                  background: 'transparent',
+                  font: 'inherit',
+                  fontSize: 15,
+                  lineHeight: 1.55,
+                  color: 'inherit',
+                }}
+              />
+            </Box>
+
             {imageDataUrl && (
-              <Box sx={{ position: 'relative', mt: 1 }}>
+              <Box sx={{ position: 'relative', mt: 1.5 }}>
                 <img
                   src={imageDataUrl}
                   alt="Upload preview"
-                  style={{ width: '100%', maxHeight: 320, objectFit: 'cover', borderRadius: 12 }}
+                  style={{ width: '100%', maxHeight: 340, objectFit: 'cover', borderRadius: 16 }}
                 />
                 <IconButton
                   size="small"
                   onClick={() => setImageDataUrl('')}
-                  sx={{ position: 'absolute', top: 8, right: 8, bgcolor: 'rgba(0,0,0,0.5)', color: '#fff' }}
+                  sx={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    bgcolor: 'rgba(15,10,35,.62)',
+                    color: '#fff',
+                    '&:hover': { bgcolor: 'rgba(15,10,35,.8)' },
+                  }}
                 >
                   <CloseIcon fontSize="small" />
                 </IconButton>
               </Box>
             )}
+
             {error && (
-              <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+              <Alert severity="error" sx={{ mt: 1.5, borderRadius: 3 }}>
                 {error}
-              </Typography>
+              </Alert>
             )}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
-              <Button
-                startIcon={<ImageIcon />}
-                onClick={() => fileRef.current?.click()}
-                color="inherit"
-              >
-                Photo
-              </Button>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }}>
+              <Tooltip title="Add a photo (max 5MB)">
+                <Button
+                  startIcon={<ImageIcon />}
+                  onClick={() => fileRef.current?.click()}
+                  sx={{ color: 'text.secondary', px: 2 }}
+                >
+                  Photo
+                </Button>
+              </Tooltip>
               <input
                 ref={fileRef}
                 type="file"
@@ -103,7 +155,18 @@ export default function CreatePost({ onCreate, creating }) {
                 hidden
                 onChange={(e) => handleFile(e.target.files?.[0])}
               />
-              <Button type="submit" variant="contained" disabled={creating || (!text.trim() && !imageDataUrl)}>
+              <Box sx={{ flexGrow: 1 }} />
+              {text.length > 0 && (
+                <Typography variant="caption" color={text.length >= MAX_LEN ? 'error' : 'text.secondary'}>
+                  {text.length}/{MAX_LEN}
+                </Typography>
+              )}
+              <Button
+                type="submit"
+                variant="contained"
+                endIcon={<SendIcon fontSize="small" />}
+                disabled={creating || (!text.trim() && !imageDataUrl)}
+              >
                 {creating ? 'Posting…' : 'Post'}
               </Button>
             </Box>
